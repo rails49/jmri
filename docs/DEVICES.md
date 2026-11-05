@@ -34,11 +34,38 @@ protocol surface, not of JMRI, and not of the hardware underneath it.
 
 | Topic | Payload | Description | JMRI |
 | --- | --- | --- | --- |
-| `device/sensor/<block>.<end>` | `addr`, `occupancy`: `occupied` \| `clear` \| `unknown`; `reason` *optional* | Occupancy at one block end, published by whatever watches it. The topic is always `<block>.<end>`, on every railroad. The drawing carries the name the hardware knows that sensor by, defaulting to the same string and editable in the UI, and whoever publishes reads it from there. | Subscribe the sensor under the system name the drawing gives. `ACTIVE` is `occupied`, `INACTIVE` is `clear`, and both `UNKNOWN` and `INCONSISTENT` are `unknown` with a reason. The system name is required; a user name is not contractual. |
 | `device/point/<addr>` | `addr`, `position`: `closed` \| `thrown` | A turnout's measured position, published only where the hardware really reports one and silent otherwise. A UI drawing turnout positions reads `wanted/point` instead and accepts that a hand-thrown or broken turnout will disagree. | Publish only for turnouts whose `feedbackMode` observes something. Suppress mode 1, `DIRECT`, where `getKnownState()` is documented to return the commanded state and a reading is indistinguishable from an echo. |
 | `device/track` | `power`: `on` \| `off`; `reason` *optional* | The supply as observed. It has no `stopped`: an emergency stop leaves the rails live, so the supply reads `on`, and that is the truth about the supply. Whether the railroad is standing under an emergency stop is `state/power`, held by `layout`. | State 2 is `on`, 4 is `off`, and `UNKNOWN` is read as `off`. Whether a given connection observes the supply or caches what it was told is a per-connection matter the protocol does not expose. |
 | `device/link/<id>` | `id`, `link`: `up` \| `down`; `detail` *optional* | Whether the publisher can reach its own hardware, keyed by whatever the publisher calls itself. | The websocket, with the heartbeat the server advertises in its `hello` (about 13.5 s by default). It cannot say whether JMRI reaches the command station: the JSON protocol exposes no connection status, though JMRI tracks one internally. That gap is the operator's to cover. |
 | `device/refused/<id>` | `id`, `addr` *optional*, `detail` | The hardware refused a command or could not parse it. Not a device state — the publisher's report on its own last exchange, each refusal overwriting the last, so no translator holds a table. It catches misconfiguration: an address the hardware does not have, a value out of range, an aspect a mast will not accept. It does not catch hardware that answers and does not obey, which no protocol reports. | The error responses, correlated to the command by the request's `id`. |
+
+## Sensor reports
+
+A sensor is not one of the rows above. Its reports go on `tc49/layout/sensor`,
+an event and not retained.
+[BUS.md](https://github.com/rails49/control/blob/main/docs/BUS.md#event-inventory)
+gives the payload and the reporting rate, and defines the setting
+`sensor_silence`, how long a sensor may go unheard.
+
+`addr` is always `<block>.<end>`, on every railroad. The drawing carries the
+name the hardware knows the sensor by, defaulting to the same string and
+editable in the UI, and whoever publishes reads it from there.
+
+The translator subscribes the sensor under the system name the drawing gives.
+The system name is required; a user name is not contractual. `ACTIVE` is
+`occupied`, `INACTIVE` is `clear`, and both `UNKNOWN` and `INCONSISTENT` are
+`unknown` with a reason.
+
+JMRI's JSON `sensor` type pushes changes only, so the translator repeats each
+sensor's last value itself. It repeats only while JMRI's websocket is up. When
+the link is lost it stops reporting, and `layout` reads the sensor `unknown`
+once `sensor_silence` has passed. A hung JMRI can go on being repeated until the
+heartbeat ends the link, about 13.5 s by default.
+
+A sensor has one reporter. A sensor a camera watches is reported by the
+occupancy service's `control` profile and does not go through JMRI. The
+service's JMRI profile sends `unknown` as `ACTIVE`, so a report through JMRI
+would read `occupied`.
 
 ## Two limits worth keeping straight
 
